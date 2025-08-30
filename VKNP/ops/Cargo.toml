@@ -1,0 +1,20 @@
+[package]
+name = "vknp_ops"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+inventory = "0.3"
+vknp_core = { path = "../core" }
+core_types = { path = "../core-types" }
+memory = { path = "../memory" }
+tensor = { path = "../tensor" }
+bytemuck = { workspace = true }
+pollster = { workspace = true }
+derive_more = { version = "2.0", features = ["from"] }
+
+[build-dependencies]
+minijinja = "2.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"

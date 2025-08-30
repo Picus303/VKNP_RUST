@@ -1,0 +1,12 @@
+[package]
+name = "core_types"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { workspace = true }
+
+[build-dependencies]
+minijinja = "2.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"

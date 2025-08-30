@@ -1,0 +1,29 @@
+[package]
+name = "vknp"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+resolver = "2"
+members = [
+  "core",
+  "core-types",
+  "memory",
+  "tensor",
+  "ops",
+  "execution",
+  "bindings",
+]
+
+[workspace.dependencies]
+pollster = "0.4.0"
+anyhow = "1.0"
+bytemuck = "1.23"
+
+[dependencies]
+vknp_core = { path = "core" }
+core_types = { path = "core-types" }
+memory = { path = "memory" }
+tensor = { path = "tensor" }
+vknp_ops = { path = "ops" }
+execution = { path = "execution" }

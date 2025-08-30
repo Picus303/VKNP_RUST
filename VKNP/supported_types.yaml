@@ -1,0 +1,7 @@
+types:
+  - name: F32
+    rust: f32
+  - name: I32
+    rust: i32
+  - name: U32
+    rust: u32

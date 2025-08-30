@@ -1,0 +1,27 @@
+/// Dynamically-typed Tensor: wraps `Tensor<T>` for various T
+#[derive(From)]
+pub enum TensorAny {
+{%- for t in types %}
+    {{ t.name }}(Tensor<{{ t.rust }}>),
+{%- endfor %}
+}
+
+impl TensorAny {
+    /// Query its DataType
+    pub fn dtype(&self) -> DataType {
+        match self {
+        {%- for t in types %}
+            TensorAny::{{ t.name }}(_) => DataType::{{ t.name }},
+        {%- endfor %}
+        }
+    }
+
+    /// Immutable access to its ViewDescriptor
+    pub fn view(&self) -> &ViewDescriptor {
+        match self {
+        {%- for t in types %}
+            TensorAny::{{ t.name }}(t) => t.view(),
+        {%- endfor %}
+        }
+    }
+}

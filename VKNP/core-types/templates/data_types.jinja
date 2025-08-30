@@ -1,0 +1,28 @@
+/// Supported element types
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DataType {
+{%- for t in types %}
+    {{ t.name }},
+{%- endfor %}
+}
+
+impl DataType {
+    /// Size of one element, in bytes
+    pub fn size_in_bytes(self) -> usize {
+        match self {
+        {%- for t in types %}
+            DataType::{{ t.name }} => std::mem::size_of::<{{ t.rust }}>(),
+        {%- endfor %}
+        }
+    }
+}
+
+/// Marker‐trait so we can go from T to DataType
+pub trait Element: bytemuck::Pod {
+    const DTYPE: DataType;
+}
+
+{%- for t in types %}
+
+impl Element for {{ t.rust }} { const DTYPE: DataType = DataType::{{ t.name }}; }
+{%- endfor %}

@@ -1,0 +1,12 @@
+[package]
+name = "tensor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vknp_core = { path = "../core" }
+core_types = { path = "../core-types" }
+memory     = { path = "../memory" }
+anyhow = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "execution"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vknp_core = { path = "../core" }
+core_types = { path = "../core-types" }
+memory = { path = "../memory" }
+tensor = { path = "../tensor" }
+vknp_ops = { path = "../ops" }
+anyhow = { workspace = true }
+pollster = { workspace = true }
+parking_lot = "0.12"
+thiserror = "2.0"
