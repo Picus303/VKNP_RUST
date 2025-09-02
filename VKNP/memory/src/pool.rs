@@ -37,7 +37,7 @@ impl BufferPool {
         let buffer = self.ctx.create_buffer(size_bytes as u64, self.usage);
 
         let id = BufferId(self.next_id);
-        self.next_id += 1;
+        self.next_id = self.next_id.wrapping_add(1);
         self.entries.insert(id, BufferEntry {
             buffer,
             size: size_bytes,
