@@ -5,7 +5,7 @@ use tensor::Tensor;
 include!("generated_tensor_any.rs");
 
 /// The full signature of an operation:
-/// - `name`
+/// - name
 /// - number of tensor inputs
 /// - allowed DataTypes per tensor input
 /// - expected output DataTypes
@@ -18,6 +18,10 @@ pub struct OpSignature {
     pub output_dtypes:  Vec<Vec<DataType>>,
 }
 
+/// Simple abstraction for structures/constants that will be pushed before an operation
+#[derive(Debug, Clone)]
+pub struct ParamBuffer { pub bytes: Vec<u8> }
+
 /// A GPU “kernel” ready to bind & dispatch
 #[derive(Debug, Clone)]
 pub struct GpuTask {
@@ -29,6 +33,7 @@ pub struct GpuTask {
     pub output_types:       Vec<DataType>,
     pub input_ids:          Vec<BufferId>,
     pub output_ids:         Vec<BufferId>,
+    pub params:             Vec<ParamBuffer>,
 }
 
 /// Result of preparing an Op: either a single GPU kernel

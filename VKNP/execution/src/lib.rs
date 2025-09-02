@@ -7,141 +7,8 @@ use vknp_ops::types::{GpuTask, PreparedOp};
 
 use kernel_manager::KernelManager;
 
-/*
 
-pub struct ExecutionEngine {
-    device:  Arc<wgpu::Device>,
-    queue:   Arc<wgpu::Queue>,
-    kernels: KernelManager,
-    binder:  BindGroupBuilder,
-}
-
-impl ExecutionEngine {
-    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Self {
-        let kernels = KernelManager::new(device.clone());
-        let binder  = BindGroupBuilder::new(device.clone());
-        Self { device, queue, kernels, binder }
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Public API                                                            */
-    /* --------------------------------------------------------------------- */
-
-    pub fn run_prepared(
-        &mut self,
-        p: PreparedOp,
-        mm: &mut MemoryManager,
-    ) -> Result<Vec<TensorAny>, ExecutionError> {
-        match p {
-            PreparedOp::Gpu(task)        => self.run_gpu_task(task, mm),
-            PreparedOp::Composite(list)  => {
-                let mut last_outputs = Vec::new();
-                for sub in list {
-                    last_outputs = self.run_prepared(sub, mm)?;
-                }
-                Ok(last_outputs)
-            }
-        }
-    }
-
-    /* --------------------------------------------------------------------- */
-    /* Private helpers                                                       */
-    /* --------------------------------------------------------------------- */
-
-    fn run_gpu_task(
-        &mut self,
-        task: GpuTask,
-        mm: &mut MemoryManager,
-    ) -> Result<Vec<TensorAny>, ExecutionError> {
-        // ------- 1. allocate outputs --------------------------------------
-        let mut output_buffers: Vec<Arc<wgpu::Buffer>> = Vec::new();
-        let mut output_tensors: Vec<TensorAny> = Vec::new();
-
-        for vd in &task.output_descs {
-            let elem_count = (0..vd.ndim as usize)
-                .map(|i| vd.shape[i] as usize)
-                .product::<usize>();
-            let bytes = elem_count * DataType::F32.size_in_bytes(); // TODO use dtype per-output
-            let id = mm.allocate_raw(bytes)?;                       // returns BufferId
-            let buf = Arc::clone(mm.main_pool().get(id).unwrap()); // hypothetical getter
-            output_buffers.push(buf);
-
-            // wrap BufferId + vd in a TensorAny (only F32 for now)
-            output_tensors.push(match DataType::F32 {
-                DataType::F32 => TensorAny::F32(
-                    tensor::Tensor::<f32>::from_raw(id, vd.clone(), 0) // device_id=0 mono-GPU
-                ),
-                _ => return Err(ExecutionError::UnsupportedDtype(DataType::F32)),
-            });
-        }
-
-        // ------- 2. collect input buffers ---------------------------------
-        let input_buffers: Vec<_> = task
-            .input_descs
-            .iter()
-            .map(|vd| {
-                // Ici on suppose que MemoryManager sait retrouver le buffer
-                // à partir du ViewDescriptor (sinon il faut passer BufferId
-                // dans GpuTask directement).
-                Arc::clone(mm.buffer_from_view(vd).unwrap())
-            })
-            .collect();
-
-        // ------- 3. pipeline & bind group ---------------------------------
-        let layout    = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("dyn_layout0"),
-            entries: &(0..(input_buffers.len() + output_buffers.len()))
-                .map(|i| wgpu::BindGroupLayoutEntry {
-                    binding: i as u32,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: if i < input_buffers.len() {
-                            wgpu::BufferBindingType::Storage { read_only: true }
-                        } else {
-                            wgpu::BufferBindingType::Storage { read_only: false }
-                        },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                })
-                .collect::<Vec<_>>(),
-        });
-
-        let pipeline = self.kernels.get_pipeline(
-            &task.pipeline_source,
-            &task.entry_point,
-            &layout,
-        );
-
-        let bg = self.binder.build(
-            &layout,
-            &task.input_descs,
-            &output_buffers,
-            &input_buffers,
-        );
-
-        // ------- 4. dispatch ----------------------------------------------
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
-            pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &bg, &[]);
-
-            // TODO : derive a better dispatch size
-            let total_elements = task.output_descs[0].shape[0];
-            let wg_size = 64;
-            let workgroups = (total_elements + wg_size - 1) / wg_size;
-            pass.dispatch_workgroups(workgroups, 1, 1);
-        }
-        self.queue.submit(Some(encoder.finish()));
-
-        Ok(output_tensors)
-    }
-}
-*/
-
-
+/// Execution engine for running GPU tasks.
 pub struct ExecutionEngine {
     ctx:     GpuContext,
     kernels: KernelManager,
@@ -153,28 +20,49 @@ impl ExecutionEngine {
     }
 
     fn run_gpu_task(&self, task: GpuTask, mm: &mut MemoryManager) -> anyhow::Result<()> {
-        // 1) buffers opaques
-        let inputs: Vec<&AbstractBuffer> = task.input_ids.iter()
-            .map(|&id| mm.get_ref(id).expect("missing input buffer"))
-            .collect();
-        let outputs: Vec<&AbstractBuffer> = task.output_ids.iter()
-            .map(|&id| mm.get_ref(id).expect("missing output buffer"))
-            .collect();
+        // 1) Allouer/écrire les buffers de paramètres (emprunt mutable)
+        let mut param_ids = Vec::with_capacity(task.params.len());
+        for p in &task.params {
+            let id = mm.allocate_raw(p.bytes.len())?;
+            mm.write_to_buffer(id, &p.bytes)?;
+            param_ids.push(id);
+        }
 
-        // 2) pipeline + layout (cache côté KernelManager)
-        let (pipeline, layout) = self.kernels.get(
-            &task.pipeline_source,
-            &task.entry_point,
-            task.input_types,
-            task.output_types,
-        ).expect("failed to get kernel");
+        // 2) Pipeline + layout
+        let (pipeline, layout) = self.kernels
+            .get(&task.pipeline_source, &task.entry_point, task.input_types, task.output_types, task.params.len())
+            .map_err(|e| anyhow::anyhow!("failed to get kernel: {e}"))?;
 
-        // 3) dispatch 1D opaque (bind-group éphémère créé en interne)
+        // 3) Total à partir du 1er output
         let total: u32 = {
             let vd = &task.output_descs[0];
             (0..vd.ndim as usize).map(|i| vd.shape[i]).product()
         };
-        self.ctx.dispatch_compute_1d(&pipeline, &layout, &inputs, &outputs, total, 64);
+
+        // 4) Créer les prêts immuables et dispatcher dans un *scope court*
+        {
+            let inputs: Vec<&AbstractBuffer> = task.input_ids.iter()
+                .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("missing input buffer: {:?}", id)))
+                .collect::<Result<_, _>>()?;
+
+            let outputs: Vec<&AbstractBuffer> = task.output_ids.iter()
+                .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("missing output buffer: {:?}", id)))
+                .collect::<Result<_, _>>()?;
+
+            let param_bufs: Vec<&AbstractBuffer> = param_ids.iter()
+                .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("param buffer missing: {:?}", id)))
+                .collect::<Result<_, _>>()?;
+
+            let all_inputs: Vec<&AbstractBuffer> =
+                inputs.iter().copied().chain(param_bufs.iter().copied()).collect();
+
+            self.ctx.dispatch_compute_1d(&pipeline, &layout, &all_inputs, &outputs, total, 64);
+        }
+
+        // 5) Maintenant on peut ré-emprunter mutablement pour libérer
+        for id in param_ids {
+            mm.release(id);
+        }
 
         Ok(())
     }
@@ -224,7 +112,7 @@ mod tests {
 
         // --- tensors -----------------------------------------------------
         let a = Tensor::<f32>::from_vec(&mut mm, &[1.0, 2.0, 3.0, 4.0], &[4], 0);
-        let b = Tensor::<f32>::from_vec(&mut mm, &[5.0, 6.0, 7.0, 8.0], &[4], 0);
+        let b = Tensor::<f32>::from_vec(&mut mm, &[5.0, 6.0, 7.0, 8.0], &[1, 4], 0);
         let c = Tensor::<f32>::empty(&mut mm, &[4], 0);
 
         // --- registry & prepare -----------------------------------------

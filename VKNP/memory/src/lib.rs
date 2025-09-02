@@ -32,6 +32,11 @@ impl MemoryManager {
         Ok(self.main_pool.get_buffer(size_bytes)?)
     }
 
+    /// Raw deallocation
+    pub fn release(&mut self, id: BufferId) {
+        self.main_pool.release_buffer(id);
+    }
+
     /// Raw upload: CPU → GPU.
     pub fn write_to_buffer<T: Pod>(
         &mut self,
@@ -98,9 +103,9 @@ mod tests {
         let ctx  = block_on(GpuContext::new()).unwrap();
         let mut mm = MemoryManager::new(ctx);
         let id = mm.allocate_raw(256).unwrap();
-        assert!(mm.main_pool.get(id).is_some());
-        mm.main_pool.release_buffer(id);
-        assert!(mm.main_pool.get(id).is_none());
+        assert!(mm.get_ref(id).is_some());
+        mm.release(id);
+        assert!(mm.get_ref(id).is_none());
     }
 
     #[test]
@@ -113,6 +118,6 @@ mod tests {
         mm.write_to_buffer(id, &data).unwrap();
         let back: Vec<u32> = mm.download_raw(id).unwrap();
         assert_eq!(data, back);
-        mm.main_pool.release_buffer(id);
+        mm.release(id);
     }
 }

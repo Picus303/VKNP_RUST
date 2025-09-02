@@ -202,7 +202,7 @@ impl GpuContext {
             });
         }
         self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("storage-bg0"),
+            label: Some("storage-bg"),
             layout: &layout.0,
             entries: &entries,
         })

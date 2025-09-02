@@ -14,6 +14,7 @@ struct KernelKey {
     ent:  Arc<str>,
     t_in: Vec<DataType>,
     t_out: Vec<DataType>,
+    p_len: usize,
 }
 
 struct PipelineBundle {
@@ -38,12 +39,14 @@ impl KernelManager {
         entry: &str,
         t_in: Vec<DataType>,
         t_out: Vec<DataType>,
+        p_len: usize,
     ) -> Result<(Arc<AbstractComputePipeline>, Arc<AbstractBindGroupLayout>), String> {
         let key = KernelKey {
             src:  Arc::from(src),
             ent:  Arc::from(entry),
             t_in,
             t_out,
+            p_len,
         };
 
         // cache lookup
@@ -52,7 +55,9 @@ impl KernelManager {
         }
 
         // create layout + pipeline via GpuContext
-        let layout   = self.ctx.create_storage_layout(key.t_in.len(), key.t_out.len());
+        let n_in = key.t_in.len() + key.p_len;
+        let n_out = key.t_out.len();
+        let layout   = self.ctx.create_storage_layout(n_in, n_out);
         let pipeline = self.ctx.create_compute_pipeline(src, entry, &layout);
 
         let bundle = Arc::new(PipelineBundle { pipeline: pipeline.clone(), layout: layout.clone() });
@@ -91,11 +96,11 @@ mod tests {
         let t_out = vec![DataType::F32];
 
         // Compile the kernel
-        let (pipeline, layout) = manager.get(&src, entry, t_in.clone(), t_out.clone())
+        let (pipeline, layout) = manager.get(&src, entry, t_in.clone(), t_out.clone(), 0)
             .expect("shader compilation failed");
 
         // Retrieve and compare
-        let (pipeline2, layout2) = manager.get(&src, entry, t_in.clone(), t_out.clone())
+        let (pipeline2, layout2) = manager.get(&src, entry, t_in.clone(), t_out.clone(), 0)
             .expect("shader compilation failed");
 
         assert_eq!(pipeline, pipeline2);
