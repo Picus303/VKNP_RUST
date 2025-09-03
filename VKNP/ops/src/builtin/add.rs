@@ -3,7 +3,7 @@ use core_types::{DataType, ViewDescriptor, MAX_DIMS};
 
 use crate::op::Op;
 use crate::register_op;
-use crate::types::{OpSignature, ParamBuffer, GpuTask, PreparedOp, TensorAny, RegistrationInfo};
+use crate::types::{OpSignature, ParamBuffer, GpuTask, PreparedOp, TensorAnyRef, RegistrationInfo};
 
 
 #[repr(C)]
@@ -60,13 +60,13 @@ impl Op for AddOp {
 
     fn prepare(
         &self,
-        inputs:  &[TensorAny],
-        outputs: &[TensorAny],
+        inputs:  &[TensorAnyRef],
+        outputs: &[TensorAnyRef],
     ) -> PreparedOp {
         // Convert to universal tensor
-        let a = match &inputs[0]  { TensorAny::F32(t) => t, _ => unreachable!() };
-        let b = match &inputs[1]  { TensorAny::F32(t) => t, _ => unreachable!() };
-        let c = match &outputs[0] { TensorAny::F32(t) => t, _ => unreachable!() };
+        let a = match &inputs[0]  { TensorAnyRef::F32(t) => t, _ => unreachable!() };
+        let b = match &inputs[1]  { TensorAnyRef::F32(t) => t, _ => unreachable!() };
+        let c = match &outputs[0] { TensorAnyRef::F32(t) => t, _ => unreachable!() };
 
         // Create metadata
         let mut total = 1u32;
@@ -124,9 +124,9 @@ struct Meta {
   _pad1       : vec3<u32>,
 };
 
-@group(0) @binding(0) var<storage, read>  A    : array<f32>;
-@group(0) @binding(1) var<storage, read>  B    : array<f32>;
-@group(0) @binding(2) var<storage, read>  M    : Meta;
+@group(0) @binding(0) var<storage, read>  A         : array<f32>;
+@group(0) @binding(1) var<storage, read>  B         : array<f32>;
+@group(0) @binding(2) var<storage, read>  M         : Meta;
 @group(0) @binding(3) var<storage, read_write> C    : array<f32>;
 
 fn linear_to_offsets(i: u32, v: View) -> u32 {

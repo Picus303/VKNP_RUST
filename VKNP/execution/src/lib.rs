@@ -113,21 +113,19 @@ mod tests {
         let b = Tensor::<f32>::from_vec(&mm, &[5.0, 6.0, 7.0, 8.0], &[1, 4], 0);
         let c = Tensor::<f32>::empty(&mm, &[4], 0);
 
-        let out = c.clone();
-
         // --- registry & prepare ------------------------------------------
         let mut reg = OpRegistry::new();
         reg.collect_inventory();
 
         let op = reg
-            .check_and_prepare("add", vec![a.into(), b.into()], vec![c.into()])
+            .check_and_prepare("add", &[(&a).into(), (&b).into()], &[(&c).into()])
             .unwrap();
 
         // --- run ----------------------------------------------------------
         engine.run_prepared(op, &mm).unwrap();
 
         // --- check results ------------------------------------------------
-        let result: Vec<f32> = out.to_vec(&mm);
+        let result: Vec<f32> = c.to_vec(&mm);
         assert_eq!(result, vec![6.0, 8.0, 10.0, 12.0]);
     }
 }

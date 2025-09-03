@@ -1,4 +1,4 @@
-use crate::types::{OpSignature, PreparedOp, TensorAny};
+use crate::types::{OpSignature, PreparedOp, TensorAnyRef};
 
 
 /// Trait to implement for each Op
@@ -9,8 +9,8 @@ pub trait Op: Send + Sync {
     /// Given typed tensors, produce the GPU task(s)
     fn prepare(
         &self,
-        inputs: &[TensorAny],
-        outputs: &[TensorAny]
+        inputs: &[TensorAnyRef],
+        outputs: &[TensorAnyRef]
     ) -> PreparedOp;
 
     /// For a simple GPU kernel, return WGSL source + entry point

@@ -3,7 +3,7 @@ pub mod types;
 pub mod builtin;
 
 use std::collections::HashMap;
-use types::{PreparedOp, TensorAny, OpError, RegistrationInfo};
+use types::{PreparedOp, TensorAnyRef, OpError, RegistrationInfo};
 use op::{Op, OpFactory};
 
 
@@ -50,11 +50,11 @@ impl OpRegistry {
     }
 
     /// Lookup + validate arity & dtypes + prepare in one call
-    pub fn check_and_prepare(
+    pub fn check_and_prepare<'a>(
         &self,
         name:    &str,
-        inputs:  Vec<TensorAny>,
-        outputs: Vec<TensorAny>,
+        inputs:  &[TensorAnyRef<'a>],
+        outputs: &[TensorAnyRef<'a>],
     ) -> Result<PreparedOp, OpError> {
         let op = self.map.get(name)
             .ok_or(OpError::UnknownOp(name.to_string()))?;
@@ -141,22 +141,22 @@ mod tests {
         let t2 = Tensor::<f32>::empty(&mut mm, &shape, 0);
         let t3 = Tensor::<f32>::empty(&mut mm, &shape, 0);
 
-        let inputs = vec![ TensorAny::F32(t1), TensorAny::F32(t2) ];
-        let outputs = vec![ TensorAny::F32(t3) ];
+        let inputs = vec![ TensorAnyRef::F32(&t1), TensorAnyRef::F32(&t2) ];
+        let outputs = vec![ TensorAnyRef::F32(&t3) ];
 
         // check and prepare the "add" op
-        let prepared = reg.check_and_prepare("add", inputs, outputs).unwrap();
+        let prepared = reg.check_and_prepare("add", &inputs, &outputs).unwrap();
         match prepared {
             PreparedOp::Gpu(task) => {
                 // should have one output descriptor
                 assert_eq!(task.output_descs.len(), 1);
-                assert_eq!(task.entry_point, "add_kernel");
+                assert_eq!(task.entry_point, "add_strided");
             }
             _ => panic!("AddOp should produce a single GpuTask"),
         }
 
         // requesting unknown op errors
-        let err = reg.check_and_prepare("extremely_strange_op", vec![], vec![]).unwrap_err();
+        let err = reg.check_and_prepare("extremely_strange_op", &[], &[]).unwrap_err();
         match err {
             OpError::UnknownOp(name) => assert_eq!(name, "extremely_strange_op"),
             _ => panic!("expected UnknownOp"),
