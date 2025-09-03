@@ -2,6 +2,8 @@ mod pool;
 
 use anyhow::Result;
 use bytemuck::{cast_slice, Pod};
+use std::sync::Arc;
+
 use core_types::BufferId;
 use pool::BufferPool;
 use vknp_core::{GpuContext, types::BufferKind, types::AbstractBuffer};
@@ -19,44 +21,37 @@ pub struct MemoryManager {
 
 impl MemoryManager {
     pub fn new(ctx: GpuContext) -> Self {
-        // Create buffer pools for different usage types
         let main_pool        = BufferPool::new(ctx.clone(), BufferKind::Main);
         let staging_upload   = BufferPool::new(ctx.clone(), BufferKind::Upload);
         let staging_download = BufferPool::new(ctx.clone(), BufferKind::Download);
-
         Self { ctx, main_pool, staging_upload, staging_download }
     }
 
     /// Raw allocation
-    pub fn allocate_raw(&mut self, size_bytes: usize) -> Result<BufferId> {
-        Ok(self.main_pool.get_buffer(size_bytes)?)
+    pub fn allocate_raw(&self, size_bytes: usize) -> Result<BufferId> {
+        self.main_pool.get_buffer(size_bytes)
     }
 
     /// Raw deallocation
-    pub fn release(&mut self, id: BufferId) {
+    pub fn release(&self, id: BufferId) {
         self.main_pool.release_buffer(id);
     }
 
     /// Raw upload: CPU → GPU.
-    pub fn write_to_buffer<T: Pod>(
-        &mut self,
-        dest_id: BufferId,
-        data: &[T],
-    ) -> Result<()> {
+    pub fn write_to_buffer<T: Pod>(&self, dest_id: BufferId, data: &[T]) -> Result<()> {
         let bytes = cast_slice(data);
 
         // 1) staging_upload: write via GpuContext
         let sid = self.staging_upload.get_buffer(bytes.len())?;
         {
-            let buf = self.staging_upload.get(sid).unwrap();
-            // delegate mapping + write + unmap
-            self.ctx.write_buffer(buf, bytes);
+            let buf: Arc<AbstractBuffer> = self.staging_upload.get(sid).expect("staging buf");
+            self.ctx.write_buffer(buf.as_ref(), bytes);
         }
 
         // 2) copy staging_upload → main_pool[dest_id]
-        let dst = self.main_pool.get(dest_id).unwrap();
-        let src = self.staging_upload.get(sid).unwrap();
-        self.ctx.copy_buffer_to_buffer(src, dst, bytes.len() as u64);
+        let dst = self.main_pool.get(dest_id).expect("dest buf");
+        let src = self.staging_upload.get(sid).expect("staging buf");
+        self.ctx.copy_buffer_to_buffer(src.as_ref(), dst.as_ref(), bytes.len() as u64);
 
         // 3) cleanup staging
         self.staging_upload.release_buffer(sid);
@@ -65,19 +60,19 @@ impl MemoryManager {
     }
 
     /// Raw download: GPU → CPU into a `Vec<T>`
-    pub fn download_raw<T: Pod>(&mut self, id: BufferId) -> Result<Vec<T>> {
+    pub fn download_raw<T: Pod>(&self, id: BufferId) -> Result<Vec<T>> {
         // 1) Copy main → staging_download
-        let src_buf = self.main_pool.get(id).unwrap();
+        let src_buf = self.main_pool.get(id).expect("src buf");
         let size = src_buf.size();
         let sid = self.staging_download.get_buffer(size as usize)?;
         {
-            let dst_buf = self.staging_download.get(sid).unwrap();
-            self.ctx.copy_buffer_to_buffer(src_buf, dst_buf, size);
+            let dst_buf = self.staging_download.get(sid).expect("dst staging buf");
+            self.ctx.copy_buffer_to_buffer(src_buf.as_ref(), dst_buf.as_ref(), size);
         }
 
         // 2) read entire staging buffer via GpuContext
-        let dst_buf = self.staging_download.get(sid).unwrap();
-        let bytes = self.ctx.read_buffer(dst_buf);
+        let dst_buf = self.staging_download.get(sid).expect("dst staging buf");
+        let bytes = self.ctx.read_buffer(dst_buf.as_ref());
 
         // 3) cleanup staging
         self.staging_download.release_buffer(sid);
@@ -87,8 +82,8 @@ impl MemoryManager {
         Ok(vec)
     }
 
-    /// Get a reference to a buffer in the main pool.
-    pub fn get_ref(&self, id: BufferId) -> Option<&AbstractBuffer> {
+    /// Get a clonable handle to a buffer in the main pool.
+    pub fn get_ref(&self, id: BufferId) -> Option<Arc<AbstractBuffer>> {
         self.main_pool.get(id)
     }
 }
@@ -101,7 +96,7 @@ mod tests {
     #[test]
     fn test_allocate_and_free() {
         let ctx  = block_on(GpuContext::new()).unwrap();
-        let mut mm = MemoryManager::new(ctx);
+        let mm = MemoryManager::new(ctx);
         let id = mm.allocate_raw(256).unwrap();
         assert!(mm.get_ref(id).is_some());
         mm.release(id);
@@ -111,7 +106,7 @@ mod tests {
     #[test]
     fn test_upload_download_roundtrip() {
         let ctx  = block_on(GpuContext::new()).unwrap();
-        let mut mm = MemoryManager::new(ctx);
+        let mm = MemoryManager::new(ctx);
         let data  = vec![10u32, 20, 30, 40];
 
         let id = mm.allocate_raw(data.len() * std::mem::size_of::<u32>()).unwrap();

@@ -9,3 +9,4 @@ core_types = { path = "../core-types" }
 pollster = { workspace = true }
 bytemuck = { workspace = true }
 anyhow = { workspace = true }
+parking_lot = "0.12"

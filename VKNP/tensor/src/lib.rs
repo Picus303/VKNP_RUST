@@ -20,9 +20,9 @@ impl<T: Element> Tensor<T> {
     /* Constructors                                                          */
     /* --------------------------------------------------------------------- */
 
-    /// Allocate an **uninitialised** tensor on the given device.
+    /// Allocate an uninitialised tensor on the given device.
     pub fn empty(
-        mgr:       &mut MemoryManager,
+        mgr:       &MemoryManager,
         shape:     &[usize],
         device_id: usize,
     ) -> Self {
@@ -49,7 +49,7 @@ impl<T: Element> Tensor<T> {
 
     /// Construct a tensor by uploading a CPU slice into GPU
     pub fn from_vec(
-        mgr:       &mut MemoryManager,
+        mgr:       &MemoryManager,
         data:      &[T],
         shape:     &[usize],
         device_id: usize,
@@ -79,7 +79,7 @@ impl<T: Element> Tensor<T> {
     }
 
     /// Download a tensor from GPU to CPU into a `Vec<T>`.
-    pub fn to_vec(&self, mgr: &mut MemoryManager) -> Vec<T> {
+    pub fn to_vec(&self, mgr: &MemoryManager) -> Vec<T> {
         mgr.download_raw(self.buffer_id).unwrap()
     }
 
