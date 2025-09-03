@@ -1,14 +1,18 @@
 mod utils;
 
 use bytemuck::Zeroable;
-use core_types::{BufferId, DataType, Element, ViewDescriptor};
-use memory::MemoryManager;
-use utils::compute_strides;
 use std::marker::PhantomData;
+
+use memory::MemoryManager;
+use vknp_core::types::BufferHandle;
+use core_types::{BufferId, DataType, Element, ViewDescriptor};
+
+use utils::compute_strides;
 
 /// Lightweight handle: (BufferId, ViewDescriptor, device_id, dtype)
 pub struct Tensor<T: Element> {
     buffer_id: BufferId,
+    handle:    BufferHandle,
     device_id: usize,
     view:      ViewDescriptor,
     dtype:     DataType,
@@ -28,7 +32,7 @@ impl<T: Element> Tensor<T> {
     ) -> Self {
         let elem_count = shape.iter().product::<usize>();
         let bytes      = elem_count * T::DTYPE.size_in_bytes();
-        let buf_id     = mgr.allocate_raw(bytes).unwrap();
+        let (buf_id, handle) = mgr.allocate_raw(bytes).unwrap();
 
         let mut vd = ViewDescriptor::zeroed();
         vd.ndim = shape.len() as u32;
@@ -40,6 +44,7 @@ impl<T: Element> Tensor<T> {
 
         Tensor {
             buffer_id: buf_id,
+            handle,
             device_id,
             view:      vd,
             dtype:     T::DTYPE,
@@ -57,7 +62,7 @@ impl<T: Element> Tensor<T> {
         // 1) allocate
         let elem_count = shape.iter().product::<usize>();
         let bytes      = elem_count * T::DTYPE.size_in_bytes();
-        let buf_id     = mgr.allocate_raw(bytes).unwrap();
+        let (buf_id, handle) = mgr.allocate_raw(bytes).unwrap();
         // 2) write
         mgr.write_to_buffer(buf_id, data).unwrap();
         // 3) build the view descriptor
@@ -71,6 +76,7 @@ impl<T: Element> Tensor<T> {
 
         Tensor {
             buffer_id: buf_id,
+            handle,
             device_id,
             view:      vd,
             dtype:     T::DTYPE,
@@ -107,6 +113,21 @@ impl<T: Element> Tensor<T> {
         self.dtype
     }
 }
+
+
+impl<T: Element> Clone for Tensor<T> {
+    fn clone(&self) -> Self {
+        Tensor {
+            buffer_id: self.buffer_id,
+            handle: self.handle.clone(),
+            device_id: self.device_id,
+            view: self.view.clone(),
+            dtype: self.dtype,
+            _marker: PhantomData,
+        }
+    }
+}
+
 
 /* ------------------------------------------------------------------------- */
 /*                                     Tests                                 */

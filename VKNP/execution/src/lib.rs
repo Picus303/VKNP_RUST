@@ -1,11 +1,8 @@
 mod kernel_manager;
 
-use std::sync::Arc;
-
-use vknp_core::GpuContext;
-use vknp_core::types::AbstractBuffer;
 use memory::MemoryManager;
 use vknp_ops::types::{GpuTask, PreparedOp};
+use vknp_core::{GpuContext, types::BufferHandle};
 
 use kernel_manager::KernelManager;
 
@@ -25,7 +22,7 @@ impl ExecutionEngine {
         // 1) Allouer/écrire les buffers de paramètres (emprunt mutable)
         let mut param_ids = Vec::with_capacity(task.params.len());
         for p in &task.params {
-            let id = mm.allocate_raw(p.bytes.len())?;
+            let (id, _) = mm.allocate_raw(p.bytes.len())?;
             mm.write_to_buffer(id, &p.bytes)?;
             param_ids.push(id);
         }
@@ -43,25 +40,22 @@ impl ExecutionEngine {
 
         // 4) Créer les prêts immuables et dispatcher dans un *scope court*
         {
-            let inputs: Vec<Arc<AbstractBuffer>> = task.input_ids.iter()
+            let inputs: Vec<BufferHandle> = task.input_ids.iter()
                 .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("missing input buffer: {:?}", id)))
                 .collect::<Result<_, _>>()?;
 
-            let outputs: Vec<Arc<AbstractBuffer>> = task.output_ids.iter()
+            let outputs: Vec<BufferHandle> = task.output_ids.iter()
                 .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("missing output buffer: {:?}", id)))
                 .collect::<Result<_, _>>()?;
 
-            let param_bufs: Vec<Arc<AbstractBuffer>> = param_ids.iter()
+            let param_bufs: Vec<BufferHandle> = param_ids.iter()
                 .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("param buffer missing: {:?}", id)))
                 .collect::<Result<_, _>>()?;
 
-            let all_inputs: Vec<Arc<AbstractBuffer>> =
+            let all_inputs: Vec<BufferHandle> =
                 inputs.iter().cloned().chain(param_bufs.iter().cloned()).collect();
 
-            let all_inputs_refs: Vec<&AbstractBuffer> = all_inputs.iter().map(|arc| arc.as_ref()).collect();
-            let outputs_refs: Vec<&AbstractBuffer> = outputs.iter().map(|arc| arc.as_ref()).collect();
-
-            self.ctx.dispatch_compute_1d(&pipeline, &layout, &all_inputs_refs, &outputs_refs, total, 64);
+            self.ctx.dispatch_compute_1d(&pipeline, &layout, &all_inputs, &outputs, total, 64);
         }
 
         // 5) Maintenant on peut ré-emprunter mutablement pour libérer
@@ -104,7 +98,6 @@ mod tests {
     use vknp_ops::OpRegistry;
     use pollster::block_on;
     use vknp_core::GpuContext;
-    use core_types::BufferId;
     use tensor::Tensor;
 
     #[test]
@@ -120,7 +113,9 @@ mod tests {
         let b = Tensor::<f32>::from_vec(&mm, &[5.0, 6.0, 7.0, 8.0], &[1, 4], 0);
         let c = Tensor::<f32>::empty(&mm, &[4], 0);
 
-        // --- registry & prepare -----------------------------------------
+        let out = c.clone();
+
+        // --- registry & prepare ------------------------------------------
         let mut reg = OpRegistry::new();
         reg.collect_inventory();
 
@@ -128,15 +123,11 @@ mod tests {
             .check_and_prepare("add", vec![a.into(), b.into()], vec![c.into()])
             .unwrap();
 
-        // --- run ---------------------------------------------------------------
-        let out_ids: Vec<BufferId> = match &op {
-            PreparedOp::Gpu(task) => task.output_ids.clone(),
-            PreparedOp::Composite(_) => unreachable!("test simple"),
-        };
+        // --- run ----------------------------------------------------------
         engine.run_prepared(op, &mm).unwrap();
 
         // --- check results ------------------------------------------------
-        let result: Vec<f32> = mm.download_raw(out_ids[0]).unwrap();
+        let result: Vec<f32> = out.to_vec(&mm);
         assert_eq!(result, vec![6.0, 8.0, 10.0, 12.0]);
     }
 }

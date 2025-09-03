@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use wgpu::{Buffer, BufferUsages, BindGroupLayout, ComputePipeline};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,3 +44,5 @@ impl AbstractComputePipeline {
         &self.0
     }
 }
+
+pub type BufferHandle = Arc<AbstractBuffer>;

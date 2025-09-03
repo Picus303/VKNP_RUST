@@ -2,11 +2,11 @@ mod pool;
 
 use anyhow::Result;
 use bytemuck::{cast_slice, Pod};
-use std::sync::Arc;
 
 use core_types::BufferId;
 use pool::BufferPool;
-use vknp_core::{GpuContext, types::BufferKind, types::AbstractBuffer};
+use vknp_core::GpuContext;
+use vknp_core::types::{BufferKind, BufferHandle};
 
 /// Manages three buffer pools on **one** GPU device:
 /// - `main_pool`         : STORAGE buffers that hold tensor data
@@ -28,8 +28,8 @@ impl MemoryManager {
     }
 
     /// Raw allocation
-    pub fn allocate_raw(&self, size_bytes: usize) -> Result<BufferId> {
-        self.main_pool.get_buffer(size_bytes)
+    pub fn allocate_raw(&self, size_bytes: usize) -> Result<(BufferId, BufferHandle)> {
+        self.main_pool.create_buffer(size_bytes)
     }
 
     /// Raw deallocation
@@ -42,11 +42,8 @@ impl MemoryManager {
         let bytes = cast_slice(data);
 
         // 1) staging_upload: write via GpuContext
-        let sid = self.staging_upload.get_buffer(bytes.len())?;
-        {
-            let buf: Arc<AbstractBuffer> = self.staging_upload.get(sid).expect("staging buf");
-            self.ctx.write_buffer(buf.as_ref(), bytes);
-        }
+        let (sid, staging_buf) = self.staging_upload.create_buffer(bytes.len())?;
+        self.ctx.write_buffer(staging_buf.as_ref(), bytes);
 
         // 2) copy staging_upload → main_pool[dest_id]
         let dst = self.main_pool.get(dest_id).expect("dest buf");
@@ -64,14 +61,10 @@ impl MemoryManager {
         // 1) Copy main → staging_download
         let src_buf = self.main_pool.get(id).expect("src buf");
         let size = src_buf.size();
-        let sid = self.staging_download.get_buffer(size as usize)?;
-        {
-            let dst_buf = self.staging_download.get(sid).expect("dst staging buf");
-            self.ctx.copy_buffer_to_buffer(src_buf.as_ref(), dst_buf.as_ref(), size);
-        }
+        let (sid, dst_buf) = self.staging_download.create_buffer(size as usize)?;
+        self.ctx.copy_buffer_to_buffer(src_buf.as_ref(), dst_buf.as_ref(), size);
 
         // 2) read entire staging buffer via GpuContext
-        let dst_buf = self.staging_download.get(sid).expect("dst staging buf");
         let bytes = self.ctx.read_buffer(dst_buf.as_ref());
 
         // 3) cleanup staging
@@ -83,7 +76,7 @@ impl MemoryManager {
     }
 
     /// Get a clonable handle to a buffer in the main pool.
-    pub fn get_ref(&self, id: BufferId) -> Option<Arc<AbstractBuffer>> {
+    pub fn get_ref(&self, id: BufferId) -> Option<BufferHandle> {
         self.main_pool.get(id)
     }
 }
@@ -97,7 +90,7 @@ mod tests {
     fn test_allocate_and_free() {
         let ctx  = block_on(GpuContext::new()).unwrap();
         let mm = MemoryManager::new(ctx);
-        let id = mm.allocate_raw(256).unwrap();
+        let (id, _) = mm.allocate_raw(256).unwrap();
         assert!(mm.get_ref(id).is_some());
         mm.release(id);
         assert!(mm.get_ref(id).is_none());
@@ -109,7 +102,7 @@ mod tests {
         let mm = MemoryManager::new(ctx);
         let data  = vec![10u32, 20, 30, 40];
 
-        let id = mm.allocate_raw(data.len() * std::mem::size_of::<u32>()).unwrap();
+        let (id, _) = mm.allocate_raw(data.len() * std::mem::size_of::<u32>()).unwrap();
         mm.write_to_buffer(id, &data).unwrap();
         let back: Vec<u32> = mm.download_raw(id).unwrap();
         assert_eq!(data, back);

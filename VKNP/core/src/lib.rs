@@ -9,7 +9,7 @@ use wgpu::{
     PipelineCompilationOptions, BindGroup, BindGroupEntry, BindGroupDescriptor, ComputePassDescriptor,
 };
 
-use types::{AbstractBuffer, AbstractBindGroupLayout, AbstractComputePipeline, BufferKind};
+use types::{AbstractBuffer, AbstractBindGroupLayout, AbstractComputePipeline, BufferKind, BufferHandle};
 
 /// Context for GPU operations
 #[derive(Clone)]
@@ -212,12 +212,15 @@ impl GpuContext {
         &self,
         pipeline: &AbstractComputePipeline,
         layout: &AbstractBindGroupLayout,
-        inputs: &[&AbstractBuffer],
-        outputs: &[&AbstractBuffer],
+        inputs: &[BufferHandle],
+        outputs: &[BufferHandle],
         total_elems: u32,
         workgroup_size: u32,
     ) {
-        let bg = self.create_storage_bind_group(layout, inputs, outputs);
+        let input_refs: Vec<&AbstractBuffer> = inputs.iter().map(|arc| arc.as_ref()).collect();
+        let output_refs: Vec<&AbstractBuffer> = outputs.iter().map(|arc| arc.as_ref()).collect();
+
+        let bg = self.create_storage_bind_group(layout, &input_refs, &output_refs);
         let (x, _, _) = self.dispatch_size_1d(total_elems, workgroup_size);
 
         let mut enc = self.create_encoder("dispatch-1d");
