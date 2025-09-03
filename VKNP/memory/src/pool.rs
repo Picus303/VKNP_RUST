@@ -4,13 +4,15 @@ use parking_lot::Mutex;
 use anyhow::Result;
 
 use vknp_core::GpuContext;
-use vknp_core::types::{AbstractBuffer, BufferKind, BufferHandle};
+use vknp_core::types::{BufferKind, BufferHandle, BufferToken};
 use core_types::BufferId;
 
+
 struct BufferEntry {
-    buffer: Arc<AbstractBuffer>,
+    buffer: BufferHandle,
     size: usize,
 }
+
 
 /// thread-safe pool of GPU buffers
 pub struct BufferPool {
@@ -30,18 +32,18 @@ impl BufferPool {
         }
     }
 
-    /// Allocate (or recycle) a buffer of `size_bytes`, returning a unique ID and Arc<AbstractBuffer>
-    pub fn create_buffer(&self, size_bytes: usize) -> Result<(BufferId, BufferHandle)> {
+    /// Allocate (or recycle) a buffer of `size_bytes`, returning a unique ID and a BufferToken
+    pub fn alloc_buffer(&self, size_bytes: usize) -> Result<(BufferId, BufferToken)> {
         // MVP: alloc à chaque demande (recyclage à venir)
         let raw = self.ctx.create_buffer(size_bytes as u64, self.usage);
         let id = BufferId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let handle = Arc::new(raw);
 
         self.entries.lock().insert(id, BufferEntry {
-            buffer: handle.clone(),
+            buffer: BufferHandle::new(handle.clone()),
             size: size_bytes,
         });
-        Ok((id, handle))
+        Ok((id, BufferToken::new(handle)))
     }
 
     /// Retrieve a clonable handle to the buffer for a given ID
@@ -60,11 +62,12 @@ impl BufferPool {
 
     /// Clear entries with only one reference (the one in the pool)
     pub fn clear_unused(&self) {
-        self.entries.lock().retain(|_, entry| Arc::strong_count(&entry.buffer) > 1);
+        self.entries.lock().retain(|_, entry| entry.buffer.strong_count() > 1);
     }
 
     pub fn usage(&self) -> BufferKind { self.usage }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -79,7 +82,7 @@ mod tests {
         let usage = BufferKind::Main;
         let pool = BufferPool::new(ctx, usage);
 
-        let (id, _) = pool.create_buffer(1024).expect("Failed to allocate buffer");
+        let (id, _) = pool.alloc_buffer(1024).expect("Failed to allocate buffer");
         assert!(pool.get(id).is_some(), "Buffer should be allocated");
 
         let size = pool.get_buffer_size(id).expect("Buffer size should be available");

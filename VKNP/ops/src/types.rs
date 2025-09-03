@@ -1,5 +1,4 @@
 use core_types::{BufferId, DataType, ViewDescriptor};
-use derive_more::From;
 use tensor::Tensor;
 
 include!("generated_tensor_any.rs");

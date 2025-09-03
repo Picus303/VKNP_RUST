@@ -6,7 +6,7 @@ use bytemuck::{cast_slice, Pod};
 use core_types::BufferId;
 use pool::BufferPool;
 use vknp_core::GpuContext;
-use vknp_core::types::{BufferKind, BufferHandle};
+use vknp_core::types::{BufferKind, BufferHandle, BufferToken};
 
 /// Manages three buffer pools on **one** GPU device:
 /// - `main_pool`         : STORAGE buffers that hold tensor data
@@ -28,8 +28,8 @@ impl MemoryManager {
     }
 
     /// Raw allocation
-    pub fn allocate_raw(&self, size_bytes: usize) -> Result<(BufferId, BufferHandle)> {
-        self.main_pool.create_buffer(size_bytes)
+    pub fn allocate_raw(&self, size_bytes: usize) -> Result<(BufferId, BufferToken)> {
+        self.main_pool.alloc_buffer(size_bytes)
     }
 
     /// Raw deallocation
@@ -42,13 +42,13 @@ impl MemoryManager {
         let bytes = cast_slice(data);
 
         // 1) staging_upload: write via GpuContext
-        let (sid, staging_buf) = self.staging_upload.create_buffer(bytes.len())?;
-        self.ctx.write_buffer(staging_buf.as_ref(), bytes);
+        let (sid, _) = self.staging_upload.alloc_buffer(bytes.len())?;
+        let staging_buf = self.staging_upload.get(sid).expect("staging buf");
+        self.ctx.write_buffer(staging_buf.as_raw(), bytes);
 
         // 2) copy staging_upload → main_pool[dest_id]
         let dst = self.main_pool.get(dest_id).expect("dest buf");
-        let src = self.staging_upload.get(sid).expect("staging buf");
-        self.ctx.copy_buffer_to_buffer(src.as_ref(), dst.as_ref(), bytes.len() as u64);
+        self.ctx.copy_buffer_to_buffer(staging_buf.as_raw(), dst.as_raw(), bytes.len() as u64);
 
         // 3) cleanup staging
         self.staging_upload.release_buffer(sid);
@@ -60,12 +60,13 @@ impl MemoryManager {
     pub fn download_raw<T: Pod>(&self, id: BufferId) -> Result<Vec<T>> {
         // 1) Copy main → staging_download
         let src_buf = self.main_pool.get(id).expect("src buf");
-        let size = src_buf.size();
-        let (sid, dst_buf) = self.staging_download.create_buffer(size as usize)?;
-        self.ctx.copy_buffer_to_buffer(src_buf.as_ref(), dst_buf.as_ref(), size);
+        let size = src_buf.as_raw().size();
+        let (sid, _) = self.staging_download.alloc_buffer(size as usize)?;
+        let dst_buf = self.staging_download.get(sid).expect("dst buf");
+        self.ctx.copy_buffer_to_buffer(src_buf.as_raw(), dst_buf.as_raw(), size);
 
         // 2) read entire staging buffer via GpuContext
-        let bytes = self.ctx.read_buffer(dst_buf.as_ref());
+        let bytes = self.ctx.read_buffer(dst_buf.as_raw());
 
         // 3) cleanup staging
         self.staging_download.release_buffer(sid);

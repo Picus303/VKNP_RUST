@@ -12,7 +12,6 @@ memory = { path = "../memory" }
 tensor = { path = "../tensor" }
 bytemuck = { workspace = true }
 pollster = { workspace = true }
-derive_more = { version = "2.0", features = ["from"] }
 
 [build-dependencies]
 minijinja = "2.11"

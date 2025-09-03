@@ -45,4 +45,16 @@ impl AbstractComputePipeline {
     }
 }
 
-pub type BufferHandle = Arc<AbstractBuffer>;
+#[derive(Clone)]
+pub struct BufferHandle(Arc<AbstractBuffer>);
+impl BufferHandle {
+    pub fn new(inner: Arc<AbstractBuffer>) -> Self { BufferHandle(inner) }
+    pub fn as_raw(&self) -> &AbstractBuffer { &self.0 }
+    pub fn strong_count(&self) -> usize { Arc::strong_count(&self.0) }
+}
+
+#[derive(Clone)]
+pub struct BufferToken(Arc<AbstractBuffer>);
+impl BufferToken {
+    pub fn new(inner: Arc<AbstractBuffer>) -> Self { BufferToken(inner) }
+}

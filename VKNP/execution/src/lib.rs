@@ -19,7 +19,7 @@ impl ExecutionEngine {
     }
 
     fn run_gpu_task(&self, task: GpuTask, mm: &MemoryManager) -> anyhow::Result<()> {
-        // 1) Allouer/écrire les buffers de paramètres (emprunt mutable)
+        // 1) Allocate and write parameter buffers
         let mut param_ids = Vec::with_capacity(task.params.len());
         for p in &task.params {
             let (id, _) = mm.allocate_raw(p.bytes.len())?;
@@ -32,13 +32,13 @@ impl ExecutionEngine {
             .get(&task.pipeline_source, &task.entry_point, task.input_types, task.output_types, task.params.len())
             .map_err(|e| anyhow::anyhow!("failed to get kernel: {e}"))?;
 
-        // 3) Total à partir du 1er output
+        // 3) Total from the 1st output
         let total: u32 = {
             let vd = &task.output_descs[0];
             (0..vd.ndim as usize).map(|i| vd.shape[i]).product()
         };
 
-        // 4) Créer les prêts immuables et dispatcher dans un *scope court*
+        // 4) Create immutable references and dispatch
         {
             let inputs: Vec<BufferHandle> = task.input_ids.iter()
                 .map(|&id| mm.get_ref(id).ok_or_else(|| anyhow::anyhow!("missing input buffer: {:?}", id)))
@@ -58,7 +58,7 @@ impl ExecutionEngine {
             self.ctx.dispatch_compute_1d(&pipeline, &layout, &all_inputs, &outputs, total, 64);
         }
 
-        // 5) Maintenant on peut ré-emprunter mutablement pour libérer
+        // 5) Re-borrow mutably to release
         for id in param_ids {
             mm.release(id);
         }

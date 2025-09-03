@@ -217,8 +217,8 @@ impl GpuContext {
         total_elems: u32,
         workgroup_size: u32,
     ) {
-        let input_refs: Vec<&AbstractBuffer> = inputs.iter().map(|arc| arc.as_ref()).collect();
-        let output_refs: Vec<&AbstractBuffer> = outputs.iter().map(|arc| arc.as_ref()).collect();
+        let input_refs: Vec<&AbstractBuffer> = inputs.iter().map(|arc| arc.as_raw()).collect();
+        let output_refs: Vec<&AbstractBuffer> = outputs.iter().map(|arc| arc.as_raw()).collect();
 
         let bg = self.create_storage_bind_group(layout, &input_refs, &output_refs);
         let (x, _, _) = self.dispatch_size_1d(total_elems, workgroup_size);
